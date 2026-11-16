@@ -595,8 +595,8 @@ const viewMat = new THREE.ShaderMaterial({
 });
 {
   const p = new THREE.Mesh(new THREE.PlaneGeometry(WIN.x1 - WIN.x0, WIN.y1 - WIN.y0), viewMat);
-  p.position.set(0, (WIN.y0 + WIN.y1) / 2, -3.13); p.userData.aoHide = true; p.userData.noIntro = true;
-  scene.add(p);
+  p.position.set(0, (WIN.y0 + WIN.y1) / 2, -3.13); p.userData.aoHide = true;
+  winGroup.add(p); // drops in together with the window frame
 }
 
 /* ---------- mirror wall ---------- */
@@ -647,7 +647,7 @@ const mirrorZ0 = -1.75, mirrorZ1 = 1.45, mirrorY0 = .16, mirrorY1 = 2.56;
 const shelf = new THREE.Group(); scene.add(shelf);
 add(shelf, rbox(.24, .045, 1.5, .01), M.oak, -3.88, 2.86, .55);
 {
-  const glow = new THREE.PointLight(0xffb36b, .5, 2.2, 2); glow.position.set(-3.82, 2.78, .55); scene.add(glow);
+  const glow = new THREE.PointLight(0xffb36b, 0, 2.2, 2); glow.position.set(-3.82, 2.78, .55); scene.add(glow); window.__shelfGlow = glow;
   add(shelf, bvl(.012, .01, 1.38), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.0, .55) }), -3.80, 2.833, .55, false, false);
   // small speaker
   const sp = add(shelf, rbox(.13, .19, .13, .025), std(0x3a3a3d, .9), -3.88, 2.98, 1.1);
@@ -1230,7 +1230,8 @@ function updateMood(dt) {
   const ud = viewRoot.userData;
   ud.terrainMat.color.copy(c.terrain); ud.cloudMat.color.copy(c.clouds);
   ud.starMat.uniforms.vis.value = c.stars; ud.moonMat.opacity = c.moon; ud.haloMat.opacity = c.moon;
-  moon.color.copy(c.win); moon.intensity = c.winI;
+  moon.color.copy(c.win); moon.intensity = c.winI * introLight;
+  if (window.__shelfGlow) window.__shelfGlow.intensity = .5 * introLight;
   hemi.intensity = c.hemi; hemi.color.copy(c.hemiSky); fill.intensity = c.fill;
   renderer.toneMappingExposure = c.exp;
   viewMat.uniforms.w.value.set(c.vw[0], c.vw[1], c.vw[2]);
@@ -1247,11 +1248,11 @@ const intro = [];
     o.position.y += 6; o.visible = false;
   }
 }
-let introTime = 0, introDone = false;
+let introTime = 0, introDone = false, introLight = 0;
 window.__skipIntro = () => { introTime = 99; }; window.__moodNow = n => { setMood(n); moodT = .999; };
 const easeOutBack = x => 1 + 2.2 * Math.pow(x - 1, 3) + 1.2 * Math.pow(x - 1, 2);
 function updateIntro(dt) {
-  if (introDone) return;
+  if (introDone) { introLight = Math.min(1, introLight + dt / 1.2); return; }
   introTime += dt;
   let all = true;
   for (const it of intro) {
