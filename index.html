@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Home Gym — 3D Diorama</title>
+<meta property="og:url" content="https://rupam.work/gym/">
+<link rel="canonical" href="https://rupam.work/gym/">
 <style>
   html, body { margin: 0; height: 100%; background: #0b0912; overflow: hidden; }
   canvas { display: block; touch-action: none; }
@@ -37,6 +39,18 @@
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
 } }
 </script>
+<style>
+.rw-by{position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147483000;font:500 12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#fff}
+.rw-by summary{list-style:none;cursor:pointer;padding:7px 11px;border-radius:999px;background:rgba(18,18,22,.55);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);opacity:.7;transition:opacity .2s;user-select:none}
+.rw-by summary::-webkit-details-marker{display:none}
+.rw-by summary:hover,.rw-by[open] summary{opacity:1}
+.rw-by div{position:absolute;left:0;bottom:calc(100% + 6px);min-width:170px;padding:6px;border-radius:12px;background:rgba(18,18,22,.86);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.rw-by a{display:block;padding:7px 9px;border-radius:8px;color:#fff;text-decoration:none;white-space:nowrap}
+.rw-by a:hover{background:rgba(255,255,255,.12)}
+.rw-by a.rw-home{opacity:.75}
+.rw-foot{max-width:720px;margin:40px auto 0;padding:24px 16px calc(32px + env(safe-area-inset-bottom,0px));font-size:13px;line-height:1.6;color:inherit;opacity:.7;text-align:center}
+.rw-foot a{color:inherit;text-decoration:underline;text-underline-offset:3px;margin:0 6px;white-space:nowrap}
+</style>
 </head>
 <body>
 <div id="loading">Building the gym…</div>
@@ -1464,5 +1478,6 @@ function frame() {
 frame();
 window.__ready = true;
 </script>
+<details class="rw-by"><summary>by Rupam</summary><div><a href="https://rupam.work/water-ring-toss/">Water Ring Toss</a><a href="https://rupam.work/protein-pan/">Protein Pan</a><a href="https://rupam.work/corner-florist/">The Corner Florist</a><a class="rw-home" href="https://rupam.work/">Rupam's portfolio ↗</a></div></details>
 </body>
 </html>

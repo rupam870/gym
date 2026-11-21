@@ -2,7 +2,7 @@
 
 A tiny 3D home gym you can play with in the browser. Built with Three.js and Claude.
 
-**Live:** https://rupam870.github.io/gym/
+**Live:** https://rupam.work/gym/
 
 - Drag to orbit, scroll to zoom
 - Tap plates to load them onto the squat bar, tap the bar for a rep
