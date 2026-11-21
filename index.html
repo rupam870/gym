@@ -25,11 +25,6 @@
   }
   #tod button:hover { color: #fff; }
   #tod button.on { background: rgba(255, 240, 225, .16); color: #fff; }
-  #tip {
-    position: fixed; left: 0; top: 0; pointer-events: none; opacity: 0; transition: opacity .2s;
-    font: 500 12px/1 system-ui, -apple-system, sans-serif; color: #2a2118; background: rgba(255, 246, 235, .92);
-    padding: 7px 10px; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.25); white-space: nowrap;
-  }
   #loading {
     position: fixed; inset: 0; display: grid; place-items: center;
     color: rgba(255, 236, 220, .45); font: 500 11px system-ui, sans-serif; letter-spacing: .14em;
@@ -45,9 +40,9 @@
 </head>
 <body>
 <div id="loading">Building the gym…</div>
-<div id="hint">Tap anything — lamps, bars, speaker, plants · Drag to orbit</div>
+<div id="hint">Drag the weights, mat &amp; lat bar · Tap plates to load the bar · Drag the floor to orbit</div>
 <div id="tod"><button data-m="day">Day</button><button data-m="dusk" class="on">Dusk</button><button data-m="night">Night</button></div>
-<div id="tip"></div>
+
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -94,6 +89,14 @@ function playRep(obj, frames) {
     if (time >= T) { obj.position.copy(base); obj.userData.busy = false; return true; }
   });
 }
+function anim(dur, step, done) {
+  let t = 0;
+  tweens.push(dt => { t = Math.min(dur, t + dt); step(THREE.MathUtils.smootherstep(t, 0, dur), t / dur); if (t >= dur) { done && done(); return true; } });
+}
+function tweenTo(obj, props, dur) { const from = {}; for (const k in props) from[k] = obj[k]; anim(dur, k => { for (const p in props) obj[p] = from[p] + (props[p] - from[p]) * k; }); }
+const bounceOut = x => { const n = 7.5625, d = 2.75; if (x < 1 / d) return n * x * x; if (x < 2 / d) return n * (x -= 1.5 / d) * x + .75; if (x < 2.5 / d) return n * (x -= 2.25 / d) * x + .9375; return n * (x -= 2.625 / d) * x + .984375; };
+const draggables = [];
+function makeDrag(obj, restY, onTap, onStart) { obj.userData.drag = { restY, onStart }; draggables.push(obj); interact(obj, '', onTap || (() => {})); }
 const hop = (o, h = .12) => playRep(o, [[0, 0, 0], [.2, h, 0], [.45, 0, 0], [.55, h * .2, 0], [.65, 0, 0]]);
 
 const bvl = (w, h, d, r = .008) => new RoundedBoxGeometry(w, h, d, 2, Math.min(r, Math.min(w, h, d) / 2 - 1e-4));
@@ -832,7 +835,7 @@ function plate(kind) {
   g.userData.t = s.t; return g;
 }
 function barbell(load) {
-  const g = new THREE.Group();
+  const g = new THREE.Group(); g.userData.collars = {};
   add(g, cylX(.014, 1.31, 20), M.knurl);
   for (const sgn of [-1, 1]) {
     add(g, cylX(.026, .03, 32), M.chrome, sgn * .67, 0, 0);
@@ -844,7 +847,7 @@ function barbell(load) {
       p.position.x = sgn * (x + t / 2); g.add(p); x += t + .002;
     }
     // collar
-    const c = new THREE.Group(); c.position.x = sgn * (x + .022); g.add(c);
+    const c = new THREE.Group(); c.position.x = sgn * (x + .022); g.add(c); g.userData.collars[sgn] = c;
     add(c, cylX(.042, .04, 40), M.chrome);
     add(c, cylX(.035, .044, 40), M.plastic, 0, 0, 0, false);
   }
@@ -883,21 +886,54 @@ const RACK = { x0: 1.83, x1: 2.97, z0: -2.58, z1: -1.44, h: 2.35 };
     add(g, bvl(.05, .05, .62), M.steel, x, .82, RACK.z1 + .33);
     add(g, bvl(.052, .012, .62), M.plastic, x, .851, RACK.z1 + .33, false);
   }
-  const bar = barbell(['r25', 'r25', 'b20']);
+  const bar = barbell([]);
   bar.position.set(cx, barY, RACK.z1 + .1); g.add(bar);
-  interact(bar, 'Barbell · tap for a squat rep', () => playRep(bar,
-    [[0, 0, 0], [.35, .06, 0], [.9, .06, .38], [1.9, -.52, .38], [2.9, .06, .38], [3.4, .06, 0], [3.7, 0, 0]]));
-  // plate storage horns on rear uprights
+  const stacks = { '-1': [], '1': [] };
+  let moving = 0;
+  interact(bar, '', () => { if (!moving) playRep(bar,
+    [[0, 0, 0], [.35, .06, 0], [.9, .06, .38], [1.9, -.52, .38], [2.9, .06, .38], [3.4, .06, 0], [3.7, 0, 0]]); });
+  const stackEnd = side => { let x = .69; for (const p of stacks[side]) x += p.userData.t + .002; return x; };
+  const relayout = side => {
+    let x = .69;
+    for (const p of stacks[side]) { tweenTo(p.position, { x: side * (x + p.userData.t / 2) }, .35); x += p.userData.t + .002; }
+    tweenTo(bar.userData.collars[side].position, { x: side * (x + .022) }, .35);
+  };
+  const fly = (p, a, b, done) => {
+    moving++;
+    anim(.75, k => { p.position.lerpVectors(a, b, k); p.position.y += Math.sin(Math.PI * k) * .38; p.rotation.x = Math.sin(Math.PI * k) * .25; },
+      () => { p.rotation.x = 0; moving--; done && done(); });
+  };
+  const loadPlate = (p, instant) => {
+    const side = p.userData.side, x = stackEnd(side);
+    const local = new THREE.Vector3(side * (x + p.userData.t / 2), 0, 0);
+    stacks[side].push(p); p.userData.onBar = true;
+    const collar = bar.userData.collars[side], cx2 = side * (x + p.userData.t + .002 + .022);
+    if (instant) { collar.position.x = cx2; bar.add(p); p.position.copy(local); return; }
+    tweenTo(collar.position, { x: cx2 }, .5);
+    fly(p, p.position.clone(), bar.position.clone().add(local), () => { bar.add(p); p.position.copy(local); });
+  };
+  const unloadPlate = p => {
+    const side = p.userData.side; stacks[side].splice(stacks[side].indexOf(p), 1); p.userData.onBar = false;
+    const from = bar.position.clone().add(p.position); g.add(p); p.position.copy(from);
+    fly(p, from, p.userData.home.clone()); relayout(side);
+  };
+  // plate storage horns on rear uprights — tap a plate to load it, tap it on the bar to put it back
   const horn = (x, y, dir, load) => {
     add(g, cylX(.026, .26, 24), M.steel, x + dir * .16, y, RACK.z0);
     add(g, cylX(.034, .012, 24), M.steel, x + dir * .29, y, RACK.z0);
-    let off = .05;
-    for (const k of load) { const p = plate(k), t = p.userData.t; p.position.set(x + dir * (off + t / 2), y, RACK.z0); g.add(p); off += t + .003; }
+    let off = .05; const made = [];
+    for (const k of load) {
+      const p = plate(k), t = p.userData.t; p.position.set(x + dir * (off + t / 2), y, RACK.z0); g.add(p); off += t + .003;
+      p.userData.home = p.position.clone(); p.userData.side = dir; made.push(p);
+      interact(p, '', () => { if (bar.userData.busy || moving) return; p.userData.onBar ? unloadPlate(p) : loadPlate(p); });
+    }
+    return made;
   };
-  horn(RACK.x0, .36, -1, ['r25', 'r25']);
-  horn(RACK.x0, .86, -1, ['b20', 'y15']);
-  horn(RACK.x1, .36, 1, ['g10', 'g10', 'w5']);
-  horn(RACK.x1, .86, 1, ['w5', 'w5']);
+  const lowL = horn(RACK.x0, .36, -1, ['r25', 'r25']);
+  horn(RACK.x0, .86, -1, ['b20', 'y15', 'g10']);
+  const lowR = horn(RACK.x1, .36, 1, ['r25', 'r25']);
+  horn(RACK.x1, .86, 1, ['b20', 'y15', 'g10']);
+  loadPlate(lowL[1], true); loadPlate(lowR[1], true);
 }
 
 /* bench press station */
@@ -934,8 +970,10 @@ const RACK = { x0: 1.83, x1: 2.97, z0: -2.58, z1: -1.44, h: 2.35 };
   const towel = add(g, rbox(.33, .022, .2, .01), std(0x9fb5a3, 1), bx + .01, .456, z0 + len - .16);
   towel.rotation.y = .12;
   // bottle
-  add(g, cylY(.037, .23, 32), std(0xd9d4ca, .35, .2), .3, .115, 1.62);
-  add(g, cylY(.03, .04, 24), std(0x222224, .5, .3), .3, .25, 1.62);
+  const bottle = new THREE.Group(); bottle.position.set(.3, 0, 1.62); scene.add(bottle);
+  add(bottle, cylY(.037, .23, 32), std(0xd9d4ca, .35, .2), 0, .115, 0);
+  add(bottle, cylY(.03, .04, 24), std(0x222224, .5, .3), 0, .25, 0);
+  makeDrag(bottle, 0, () => hop(bottle, .1));
 }
 
 /* dumbbell rack along the mirror */
@@ -965,7 +1003,11 @@ const RACK = { x0: 1.83, x1: 2.97, z0: -2.58, z1: -1.44, h: 2.35 };
         add(db, cylX(.024, .014, 20), M.chrome, -.075, 0, 0); add(db, cylX(.024, .014, 20), M.chrome, .075, 0, 0);
         db.position.set(xb + .03, tr.y - .05 + r * .9, z + r);
         db.rotation.z = tr.rot; db.rotation.x = Math.PI / 6;
-        g.add(db); interact(db, 'Dumbbell · tap to pick up', () => hop(db, .14));
+        g.add(db);
+        makeDrag(db, db.position.y, () => hop(db, .14), o => {
+          o.userData.drag.restY = r * .87;
+          tweenTo(o.rotation, { x: 0, z: 0 }, .3);
+        });
         z += r * 2 + .03;
       }
       z += .03;
@@ -974,6 +1016,7 @@ const RACK = { x0: 1.83, x1: 2.97, z0: -2.58, z1: -1.44, h: 2.35 };
 }
 
 /* lat pulldown (back-left corner) */
+let lat = null;
 {
   const g = new THREE.Group(); scene.add(g);
   const xL = -3.5, xR = -2.5, zb = -2.78, cx = (xL + xR) / 2, top = 2.42;
@@ -987,16 +1030,17 @@ const RACK = { x0: 1.83, x1: 2.97, z0: -2.58, z1: -1.44, h: 2.35 };
   add(g, bvl(.08, .08, 1.15), M.steel, cx, top, zb + .55);
   const pulley = (y, z) => { add(g, cylX(.055, .03, 32), M.plastic, cx, y, z); add(g, cylX(.015, .05, 16), M.chrome, cx, y, z); };
   pulley(top - .07, zb + 1.08); pulley(top - .07, zb + .05);
-  // weight stack with guide rods
+  // weight stack with guide rods — top plates ride up when the bar is pulled
   for (const dx of [-.12, .12]) add(g, cylY(.011, 2.1, 16), M.chrome, cx + dx, 1.15, zb + .12);
-  for (let i = 0; i < 15; i++) add(g, rbox(.34, .037, .2, .006), i === 9 ? M.steel : M.iron, cx, .17 + i * .041, zb + .12);
-  add(g, cylY(.012, .06, 12), M.chrome, cx + .16, .17 + 9 * .041, zb + .14);
-  add(g, cylY(.01, .9, 12), M.chrome, cx, .78 + .45, zb + .12);
-  // cables
+  const liftG = new THREE.Group(); g.add(liftG);
+  for (let i = 0; i < 15; i++) add(i >= 9 ? liftG : g, rbox(.34, .037, .2, .006), i === 9 ? M.steel : M.iron, cx, .17 + i * .041, zb + .12);
+  add(liftG, cylY(.012, .06, 12), M.chrome, cx + .16, .17 + 9 * .041, zb + .14);
+  add(liftG, cylY(.01, .9, 12), M.chrome, cx, .78 + .45, zb + .12);
+  // cables (unit length, stretched every frame)
   const cable = std(0x111111, .6);
-  add(g, cylY(.005, top - .07 - 1.68, 8), cable, cx, (top - .07 + 1.68) / 2, zb + .12, false);
+  const rearCable = add(g, new THREE.CylinderGeometry(.005, .005, 1, 8), cable, cx, 0, zb + .12, false);
   add(g, cylZ(.005, 1.0, 8), cable, cx, top - .02, zb + .56, false);
-  add(g, cylY(.005, top - .1 - 1.98, 8), cable, cx, (top - .1 + 1.98) / 2, zb + 1.1, false);
+  const frontCable = add(g, new THREE.CylinderGeometry(.005, .005, 1, 8), cable, cx, 0, zb + 1.1, false);
   // lat bar
   const lb = new THREE.Group(); lb.position.set(cx, 1.98, zb + 1.1); g.add(lb);
   add(lb, cylX(.016, .7, 20), M.chrome);
@@ -1005,6 +1049,21 @@ const RACK = { x0: 1.83, x1: 2.97, z0: -2.58, z1: -1.44, h: 2.35 };
     end.rotation.z = s * -.32;
     add(lb, cylX(.021, .2, 20), M.plastic, s * .52, -.065, 0).rotation.z = s * -.32;
   }
+  const pY = top - .07;
+  lat = {
+    lb, pull: 0, busy: false,
+    set(p) {
+      this.pull = p; lb.position.y = 1.98 - p; liftG.position.y = p;
+      const rb = 1.68 + p; rearCable.scale.y = pY - rb; rearCable.position.y = (pY + rb) / 2;
+      const fb = 1.98 - p, ft = pY - .03; frontCable.scale.y = ft - fb; frontCable.position.y = (ft + fb) / 2;
+    },
+  };
+  lat.set(0);
+  lb.userData.lat = true;
+  interact(lb, '', () => {
+    if (lat.busy) return; lat.busy = true;
+    anim(2.2, (k, raw) => lat.set(.55 * Math.sin(Math.PI * raw)), () => { lat.set(0); lat.busy = false; });
+  });
   // seat + thigh pads
   add(g, bvl(.07, .06, 1.25), M.steel, cx, .05, zb + .82);
   add(g, bvl(.07, .44, .07), M.steel, cx, .25, zb + 1.38);
@@ -1017,7 +1076,7 @@ const RACK = { x0: 1.83, x1: 2.97, z0: -2.58, z1: -1.44, h: 2.35 };
 /* kettlebells, mat & roller */
 function kettlebell(x, z, r, mat, rotY = 0) {
   const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = rotY; scene.add(g);
-  interact(g, 'Kettlebell · tap to swing', () => hop(g, .22));
+  makeDrag(g, 0, () => hop(g, .22));
   const body = add(g, new THREE.SphereGeometry(r, 40, 28), mat, 0, r * .92, 0); body.scale.y = .94;
   add(g, cylY(r * .55, .02, 32), mat, 0, .01, 0);
   const handle = add(g, new THREE.TorusGeometry(r * .62, r * .14, 16, 40, Math.PI), M.iron, 0, r * 1.62, 0);
@@ -1031,9 +1090,11 @@ kettlebell(3.7, -.48, .1, std(0x56704f, .5, .1), .2);
   const yoga = new THREE.Group(); yoga.position.set(2.15, 0, .85); yoga.rotation.y = Math.PI / 2 - .08; scene.add(yoga);
   add(yoga, rbox(.66, .012, 1.85, .005, 2), std(0x8fa38c, .9), 0, .006, 0, false, true);
   add(yoga, cylX(.03, .66, 32), std(0x7c9079, .9), 0, .03, -.95);
+  makeDrag(yoga, 0);
   const roller = add(scene, cylX(.075, .45, 40), std(0xb5643f, .8), 3.55, .075, 1.45);
-  roller.rotation.y = .9;
-  add(scene, new THREE.SphereGeometry(.13, 40, 28), std(0x3a3d44, .8), -2.95, .13, 1.55);
+  roller.rotation.y = .9; makeDrag(roller, .075, () => hop(roller, .1));
+  const ball = add(scene, new THREE.SphereGeometry(.13, 40, 28), std(0x3a3d44, .8), -2.95, .13, 1.55);
+  makeDrag(ball, .13, () => hop(ball, .25));
 }
 
 /* ---------- wall lamps (click to toggle) ---------- */
@@ -1106,38 +1167,93 @@ const hint = document.getElementById('hint');
 controls.addEventListener('start', () => { controls.autoRotate = false; clearTimeout(idleTimer); });
 controls.addEventListener('end', () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => controls.autoRotate = true, 6000); });
 
-/* ---------- picking + tooltip ---------- */
-const tip = document.getElementById('tip');
+/* ---------- picking, tapping & dragging ---------- */
 {
+  const el = renderer.domElement;
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-  let down = null, hoverPos = null;
+  const floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hp = new THREE.Vector3();
+  const B = { x0: -3.82, x1: 3.85, z0: -2.85, z1: 1.75 };
+  const clamp = THREE.MathUtils.clamp;
+  const setRay = (x, y) => { ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera); };
   const pick = (x, y) => {
-    ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
-    ray.setFromCamera(ndc, camera);
+    setRay(x, y);
     for (const h of ray.intersectObjects(interactive, true)) {
       let o = h.object; while (o && !o.userData.interact) o = o.parent;
-      if (o) return o.userData.interact;
+      if (o) return o;
     }
     return null;
   };
-  renderer.domElement.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
-  renderer.domElement.addEventListener('pointerup', e => {
-    if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;
-    const it = pick(e.clientX, e.clientY);
-    if (it) { it.onClick(); hint.style.opacity = 0; }
+  let st = null;
+  el.addEventListener('pointerdown', e => {
+    const o = pick(e.clientX, e.clientY);
+    st = { o, x: e.clientX, y: e.clientY, moved: false };
+    if (!o) return;
+    const canDrag = o.userData.drag && !o.userData.busy, canPull = o.userData.lat && !lat.busy;
+    if (!canDrag && !canPull) return;
+    controls.enabled = false; controls.autoRotate = false; clearTimeout(idleTimer);
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    if (canDrag) {
+      setRay(e.clientX, e.clientY); ray.ray.intersectPlane(floor, hp);
+      st.mode = 'drag'; st.off = new THREE.Vector3(o.position.x - hp.x, 0, o.position.z - hp.z);
+    } else {
+      const a = lat.lb.getWorldPosition(new THREE.Vector3()), b = a.clone(); b.y -= 1;
+      st.mode = 'lat'; st.pxm = Math.max(60, (a.project(camera).y - b.project(camera).y) * innerHeight / 2);
+    }
+  }, { capture: true });
+
+  el.addEventListener('pointermove', e => {
+    if (st && Math.hypot(e.clientX - st.x, e.clientY - st.y) > 6) st.moved = true;
+    if (st && st.mode === 'drag' && st.moved) {
+      const o = st.o;
+      if (!st.started) {
+        st.started = true; o.userData.dragging = true;
+        if (o.parent !== scene) { scene.attach(o); }
+        if (o.userData.drag.onStart) { o.userData.drag.onStart(o); o.userData.drag.onStart = null; }
+        el.style.cursor = 'grabbing';
+      }
+      setRay(e.clientX, e.clientY);
+      if (ray.ray.intersectPlane(floor, hp)) {
+        o.position.x = clamp(hp.x + st.off.x, B.x0, B.x1);
+        o.position.z = clamp(hp.z + st.off.z, B.z0, B.z1);
+      }
+      return;
+    }
+    if (st && st.mode === 'lat' && st.moved) { el.style.cursor = 'grabbing'; lat.set(clamp((e.clientY - st.y) / st.pxm, 0, .6)); return; }
+    if (!e.buttons) hover(e.clientX, e.clientY);
   });
-  renderer.domElement.addEventListener('pointermove', e => { hoverPos = e.buttons ? null : [e.clientX, e.clientY]; if (e.buttons) tip.style.opacity = 0; });
-  renderer.domElement.addEventListener('pointerleave', () => { hoverPos = null; tip.style.opacity = 0; });
-  let last = 0;
-  window.__hover = now => {
-    if (!hoverPos || now - last < 60) return; last = now;
-    const it = pick(...hoverPos);
-    renderer.domElement.style.cursor = it ? 'pointer' : 'grab';
-    if (it && matchMedia('(hover: hover)').matches) {
-      tip.textContent = it.label; tip.style.opacity = 1;
-      tip.style.transform = `translate(${hoverPos[0] + 14}px, ${hoverPos[1] + 16}px)`;
-    } else tip.style.opacity = 0;
+
+  const end = () => {
+    if (!st) return;
+    const s = st; st = null; controls.enabled = true;
+    if (s.mode) { clearTimeout(idleTimer); idleTimer = setTimeout(() => controls.autoRotate = true, 6000); }
+    if (s.mode === 'drag' && s.started) {
+      const o = s.o; o.userData.dragging = false; o.userData.busy = true;
+      const from = o.position.y, to = o.userData.drag.restY;
+      anim(.5, (k, raw) => { o.position.y = from + (to - from) * bounceOut(raw); }, () => { o.position.y = to; o.userData.busy = false; });
+      el.style.cursor = 'grab'; hint.style.opacity = 0; return;
+    }
+    if (s.mode === 'lat' && s.moved) {
+      lat.busy = true; const from = lat.pull;
+      anim(.45, k => lat.set(from * (1 - k)), () => { lat.set(0); lat.busy = false; });
+      el.style.cursor = 'grab'; hint.style.opacity = 0; return;
+    }
+    if (!s.moved && s.o) { s.o.userData.interact.onClick(); hint.style.opacity = 0; }
   };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+
+  let lastH = 0;
+  function hover(x, y) {
+    const now = performance.now(); if (now - lastH < 60) return; lastH = now;
+    const o = pick(x, y);
+    el.style.cursor = !o ? 'default' : (o.userData.drag || o.userData.lat) ? 'grab' : 'pointer';
+  }
+}
+function updateDrag(dt) {
+  for (const o of draggables) if (o.userData.dragging) {
+    const ty = o.userData.drag.restY + .16;
+    o.position.y += (ty - o.position.y) * Math.min(1, dt * 14);
+  }
 }
 
 /* ---------- music (generated lo-fi loop) + floating notes ---------- */
@@ -1341,7 +1457,7 @@ function frame() {
   updateIntro(dt);
   updateNotes(dt);
   for (let i = tweens.length - 1; i >= 0; i--) if (tweens[i](dt)) tweens.splice(i, 1);
-  window.__hover && window.__hover(performance.now());
+  updateDrag(dt);
   composer.render(dt);
   requestAnimationFrame(frame);
 }

@@ -5,5 +5,7 @@ A tiny 3D home gym you can play with in the browser. Built with Three.js and Cla
 **Live:** https://rupam870.github.io/gym/
 
 - Drag to orbit, scroll to zoom
-- Tap the barbells for a squat or bench rep, the speaker for music, lamps, plants, dumbbells
+- Tap plates to load them onto the squat bar, tap the bar for a rep
+- Pull the lat bar down and the weight stack rises
+- Drag dumbbells off the rack, move kettlebells, the mat and the roller
 - Day / Dusk / Night switch — the view through the window changes with your angle
